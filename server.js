@@ -69,10 +69,21 @@ const waitingPlayers = { checkers: null, durak: null };
 
 function getUserFromSocket(socket) {
   try {
-    const token = socket.handshake.auth?.token || socket.handshake.headers?.cookie?.match(/token=([^;]+)/)?.[1];
-    if (!token) return null;
-    return jwt.verify(token, JWT_SECRET);
-  } catch { return null; }
+    // Try JWT from cookie header first
+    const cookieHeader = socket.handshake.headers?.cookie || '';
+    const tokenMatch = cookieHeader.match(/token=([^;]+)/);
+    if (tokenMatch) {
+      return jwt.verify(tokenMatch[1], JWT_SECRET);
+    }
+    // Fallback: username from handshake auth (validate exists in DB)
+    const username = socket.handshake.auth?.username;
+    if (username) {
+      const db = getDb();
+      const user = db.prepare('SELECT id, username, is_admin, is_banned FROM users WHERE username = ?').get(username);
+      if (user && !user.is_banned) return { id: user.id, username: user.username, isAdmin: user.is_admin };
+    }
+    return null;
+  } catch (e) { console.error('getUserFromSocket error:', e.message); return null; }
 }
 
 io.on('connection', (socket) => {
@@ -138,10 +149,51 @@ io.on('connection', (socket) => {
     if (waitingPlayers[game]?.username === socket.username) waitingPlayers[game] = null;
   });
 
+  // ===== ROOM REJOIN (after page navigation) =====
+  socket.on('rejoinRoom', ({ roomId, username }) => {
+    const room = rooms.get(roomId?.toUpperCase());
+    if (!room) {
+      socket.emit('error', 'Room not found or expired. Please start a new game.');
+      return;
+    }
+
+    // Find the player in the room by username and update their socket
+    const playerIdx = room.players.findIndex(p => p.username === username);
+    if (playerIdx === -1) {
+      socket.emit('error', 'You are not in this room.');
+      return;
+    }
+
+    // Update socket reference
+    room.players[playerIdx].socket = socket;
+    socket.join(roomId.toUpperCase());
+    socket.currentRoom = roomId.toUpperCase();
+    socket.username = username;
+
+    console.log(`[Socket] ${username} rejoined room ${roomId}`);
+
+    if (room.game === 'checkers' && room.state) {
+      const state = room.state.checkers;
+      socket.emit('checkersRejoin', {
+        board: state.board,
+        isRedTurn: state.isRedTurn,
+        mySide: playerIdx === 0 ? 'red' : 'black',
+        players: {
+          red: room.players[0].username,
+          black: room.players[1]?.username || 'Waiting...'
+        }
+      });
+    } else if (room.game === 'durak' && room.state) {
+      const state = room.state.durak;
+      const publicState = durak.getPublicState(state, playerIdx);
+      socket.emit('durakRejoin', { ...publicState, myIndex: playerIdx });
+    }
+  });
+
   // ===== CHECKERS MOVES =====
   socket.on('checkersMove', ({ roomId, move }) => {
-    const room = rooms.get(roomId);
-    if (!room || room.game !== 'checkers') return;
+    const room = rooms.get(roomId?.toUpperCase());
+    if (!room || room.game !== 'checkers') { socket.emit('moveError', 'Room not found'); return; }
     const state = room.state;
     const playerIdx = room.players.findIndex(p => p.username === socket.username);
     const side = playerIdx === 0 ? 'red' : 'black';
@@ -157,13 +209,13 @@ io.on('connection', (socket) => {
       update.winner = result.winner === 'red' ? room.players[0].username : room.players[1].username;
       recordMatchResult(room, update.winner);
     }
-    io.to(roomId).emit('checkersUpdate', update);
+    io.to(room.id).emit('checkersUpdate', update);
   });
 
   // ===== DURAK ACTIONS =====
   socket.on('durakAction', ({ roomId, action, ...data }) => {
-    const room = rooms.get(roomId);
-    if (!room || room.game !== 'durak') return;
+    const room = rooms.get(roomId?.toUpperCase());
+    if (!room || room.game !== 'durak') { socket.emit('moveError', 'Room not found'); return; }
     const state = room.state.durak;
     const playerIdx = room.players.findIndex(p => p.username === socket.username);
 
@@ -246,13 +298,19 @@ io.on('connection', (socket) => {
     for (const game in waitingPlayers) {
       if (waitingPlayers[game]?.username === socket.username) waitingPlayers[game] = null;
     }
-    // Notify room
+    // Give 10 seconds for reconnect before notifying room
     if (socket.currentRoom) {
-      const room = rooms.get(socket.currentRoom);
-      if (room && room.started) {
-        io.to(socket.currentRoom).emit('opponentLeft', { message: 'Opponent disconnected' });
-        rooms.delete(socket.currentRoom);
-      }
+      const roomId = socket.currentRoom;
+      setTimeout(() => {
+        const room = rooms.get(roomId);
+        if (!room) return;
+        // Check if the player re-joined with a new socket
+        const stillGone = !room.players.find(p => p.username === socket.username && p.socket.connected);
+        if (stillGone && room.started) {
+          io.to(roomId).emit('opponentLeft', { message: 'Opponent disconnected' });
+          rooms.delete(roomId);
+        }
+      }, 10000);
     }
     io.emit('onlineCount', io.sockets.sockets.size);
     console.log(`[Socket] ${socket.username} disconnected`);
@@ -264,19 +322,27 @@ function startMultiplayerGame(room) {
   if (room.game === 'checkers') {
     const board = checkers.createInitialBoard();
     room.state = { checkers: { board, isRedTurn: true } };
-    io.to(room.id).emit('checkersStart', {
+    // Send each player their side + room ID embedded in the start event
+    room.players[0].socket.emit('checkersStart', {
       board,
       players: { red: room.players[0].username, black: room.players[1].username },
-      isRedTurn: true
+      isRedTurn: true,
+      roomId: room.id,
+      mySide: 'red'
     });
-    room.players[0].socket.emit('yourSide', 'red');
-    room.players[1].socket.emit('yourSide', 'black');
+    room.players[1].socket.emit('checkersStart', {
+      board,
+      players: { red: room.players[0].username, black: room.players[1].username },
+      isRedTurn: true,
+      roomId: room.id,
+      mySide: 'black'
+    });
   } else if (room.game === 'durak') {
     const state = durak.createGame();
     room.state = { durak: state };
     room.players.forEach((p, i) => {
-      p.socket.emit('durakStart', durak.getPublicState(state, i));
-      p.socket.emit('yourSide', i);
+      const publicState = durak.getPublicState(state, i);
+      p.socket.emit('durakStart', { ...publicState, roomId: room.id, mySide: i });
     });
   }
 }
