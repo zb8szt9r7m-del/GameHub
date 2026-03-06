@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Checkers — GameHub</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#080c14; --surface:#0d1520; --surface2:#111d2e; --border:#1a2d47;
+  --accent:#00d4ff; --gold:#ffd700; --text:#c8d8e8; --text-dim:#5a7a9a;
+  --green:#00ff88; --red:#ff3355;
+  --board-light:#c8a96e; --board-dark:#5d3a1a;
+  --piece-red:#e63946; --piece-black:#1a1a2e;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font-family:'Rajdhani',sans-serif; min-height:100vh; }
+.game-layout { display:grid; grid-template-columns:1fr auto 1fr; gap:24px; max-width:1100px; margin:0 auto; padding:24px; align-items:start; }
+@media(max-width:900px){ .game-layout { grid-template-columns:1fr; } .side-panel { display:none; } }
+
+/* HEADER */
+.game-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:12px 24px; background:var(--surface); border-bottom:1px solid var(--border);
+}
+.game-header-left { display:flex; align-items:center; gap:16px; }
+.back-btn {
+  padding:8px 16px; border:1px solid var(--border); border-radius:6px;
+  background:transparent; color:var(--text); cursor:pointer;
+  font-family:'Rajdhani',sans-serif; font-size:0.9rem; text-decoration:none;
+  display:inline-flex; align-items:center; gap:6px;
+}
+.back-btn:hover { border-color:var(--accent); }
+.game-title { font-family:'Orbitron',sans-serif; font-size:1.1rem; color:var(--accent); }
+
+/* STATUS BAR */
+.status-bar {
+  text-align:center; padding:12px; margin:16px 0;
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+}
+#statusText { font-family:'Orbitron',sans-serif; font-size:0.9rem; color:var(--accent); }
+#turnIndicator {
+  display:inline-block; width:12px; height:12px; border-radius:50%;
+  margin-right:8px; vertical-align:middle;
+}
+
+/* BOARD */
+.board-container { display:flex; justify-content:center; align-items:center; flex-direction:column; }
+.board-wrap {
+  position:relative;
+  border:3px solid var(--border);
+  border-radius:4px;
+  box-shadow: 0 0 40px rgba(0,0,0,0.6), 0 0 80px rgba(0,100,200,0.1);
+}
+#board {
+  display:grid; grid-template-columns:repeat(8,1fr);
+  width:520px; height:520px;
+}
+@media(max-width:600px){ #board { width:min(90vw,360px); height:min(90vw,360px); } }
+.cell {
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; position:relative; transition:background 0.1s;
+}
+.cell.light { background:var(--board-light); }
+.cell.dark { background:var(--board-dark); }
+.cell.selected { background:#5a7a2a !important; }
+.cell.valid-move { background:#3a5a2a !important; }
+.cell.valid-move::after {
+  content:''; position:absolute;
+  width:30%; height:30%; border-radius:50%;
+  background:rgba(0,255,100,0.5);
+  animation:dotPulse 1s ease infinite;
+}
+@keyframes dotPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.3)} }
+.cell.last-move { background:#4a6a3a !important; }
+
+/* PIECES */
+.piece {
+  width:76%; height:76%; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; transition:transform 0.15s, box-shadow 0.15s;
+  position:relative; z-index:2;
+  animation:pieceAppear 0.3s ease;
+}
+@keyframes pieceAppear { from{transform:scale(0)} to{transform:scale(1)} }
+.piece.moving { animation:pieceMove 0.25s ease; }
+@keyframes pieceMove { 0%{transform:scale(1.2)} 50%{transform:scale(0.9)} 100%{transform:scale(1)} }
+.piece.red-piece {
+  background:radial-gradient(circle at 35% 35%, #ff6b6b, var(--piece-red));
+  box-shadow: 0 3px 8px rgba(0,0,0,0.5), inset 0 1px 2px rgba(255,255,255,0.3);
+  border:2px solid rgba(255,100,100,0.3);
+}
+.piece.black-piece {
+  background:radial-gradient(circle at 35% 35%, #3a3a5e, var(--piece-black));
+  box-shadow: 0 3px 8px rgba(0,0,0,0.5), inset 0 1px 2px rgba(255,255,255,0.1);
+  border:2px solid rgba(100,100,200,0.3);
+}
+.piece.king::after {
+  content:'♛'; position:absolute;
+  font-size:1.1em; color:var(--gold);
+  text-shadow:0 0 8px rgba(255,215,0,0.8);
+  animation:crownAppear 0.5s ease;
+}
+@keyframes crownAppear { from{transform:scale(0) rotate(-180deg)} to{transform:scale(1) rotate(0)} }
+.piece:hover { transform:scale(1.1); }
+.piece.selected-piece { transform:scale(1.15); box-shadow:0 0 0 3px var(--green), 0 3px 8px rgba(0,0,0,0.5); }
+
+/* SIDE PANELS */
+.side-panel { display:flex; flex-direction:column; gap:16px; }
+.panel-box {
+  background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:20px;
+}
+.panel-box h3 { font-family:'Orbitron',sans-serif; font-size:0.85rem; color:var(--text-dim); margin-bottom:12px; letter-spacing:2px; }
+.player-card {
+  display:flex; align-items:center; gap:12px; padding:10px;
+  border-radius:8px; margin-bottom:8px; background:var(--surface2);
+}
+.player-color { width:24px; height:24px; border-radius:50%; }
+.player-color.red { background:var(--piece-red); }
+.player-color.black { background:var(--piece-black); border:1px solid #444; }
+.player-info { flex:1; }
+.player-name { font-weight:600; }
+.player-pieces { color:var(--text-dim); font-size:0.85rem; }
+.player-card.active-player { border:1px solid var(--accent); background:rgba(0,212,255,0.05); }
+.capture-log { max-height:120px; overflow-y:auto; }
+.cap-item { font-size:0.85rem; color:var(--text-dim); padding:4px 0; border-bottom:1px solid var(--border); }
+
+/* WINNER OVERLAY */
+.winner-overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,0.85);
+  display:none; align-items:center; justify-content:center; z-index:100;
+}
+.winner-box {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:16px; padding:48px; text-align:center; max-width:400px;
+  animation:popIn 0.4s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes popIn { from{transform:scale(0.5);opacity:0} to{transform:scale(1);opacity:1} }
+.winner-trophy { font-size:4rem; margin-bottom:16px; }
+.winner-title { font-family:'Orbitron',sans-serif; font-size:1.5rem; color:var(--gold); margin-bottom:8px; }
+.winner-sub { color:var(--text-dim); margin-bottom:24px; }
+.winner-btns { display:flex; gap:12px; justify-content:center; }
+.btn-replay {
+  padding:12px 28px; border:none; border-radius:8px;
+  background:linear-gradient(135deg,var(--accent),#0088cc);
+  color:#000; font-family:'Orbitron',sans-serif; font-size:0.85rem; font-weight:700;
+  cursor:pointer; letter-spacing:1px;
+}
+.btn-home {
+  padding:12px 20px; border:1px solid var(--border); border-radius:8px;
+  background:transparent; color:var(--text); cursor:pointer; font-family:'Rajdhani',sans-serif;
+}
+</style>
+</head>
+<body>
+<div class="game-header">
+  <div class="game-header-left">
+    <a href="/" class="back-btn">← LOBBY</a>
+    <span class="game-title">♟️ CHECKERS</span>
+  </div>
+  <div id="modeLabel" style="color:var(--text-dim);font-size:0.9rem"></div>
+</div>
+
+<div class="game-layout">
+  <!-- LEFT PANEL -->
+  <div class="side-panel">
+    <div class="panel-box">
+      <h3>PLAYERS</h3>
+      <div class="player-card" id="playerRed">
+        <div class="player-color red"></div>
+        <div class="player-info">
+          <div class="player-name" id="redName">Red Player</div>
+          <div class="player-pieces" id="redCount">12 pieces</div>
+        </div>
+      </div>
+      <div class="player-card" id="playerBlack">
+        <div class="player-color black"></div>
+        <div class="player-info">
+          <div class="player-name" id="blackName">Black Player</div>
+          <div class="player-pieces" id="blackCount">12 pieces</div>
+        </div>
+      </div>
+    </div>
+    <div class="panel-box">
+      <h3>CAPTURES</h3>
+      <div class="capture-log" id="captureLog"><p style="color:var(--text-dim);font-size:0.85rem">No captures yet</p></div>
+    </div>
+  </div>
+
+  <!-- BOARD -->
+  <div class="board-container">
+    <div class="status-bar">
+      <span id="turnIndicator"></span>
+      <span id="statusText">Loading...</span>
+    </div>
+    <div class="board-wrap">
+      <div id="board"></div>
+    </div>
+    <div style="display:flex;gap:12px;margin-top:16px">
+      <button onclick="newGame()" style="padding:10px 20px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text);cursor:pointer;font-family:Rajdhani,sans-serif">New Game</button>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="side-panel">
+    <div class="panel-box">
+      <h3>MOVE LOG</h3>
+      <div class="capture-log" id="moveLog"><p style="color:var(--text-dim);font-size:0.85rem">Game started</p></div>
+    </div>
+    <div class="panel-box">
+      <h3>HOW TO PLAY</h3>
+      <p style="color:var(--text-dim);font-size:0.85rem;line-height:1.6">
+        Click a piece to select it. Green dots show valid moves. Capture opponent pieces by jumping over them. Reach the opposite end to become King (♛). Capture all opponent pieces to win!
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- WINNER OVERLAY -->
+<div class="winner-overlay" id="winnerOverlay">
+  <div class="winner-box">
+    <div class="winner-trophy" id="winnerTrophy">🏆</div>
+    <div class="winner-title" id="winnerTitle">VICTORY!</div>
+    <div class="winner-sub" id="winnerSub"></div>
+    <div class="winner-btns">
+      <button class="btn-replay" onclick="newGame()">PLAY AGAIN</button>
+      <button class="btn-home" onclick="window.location.href='/'">LOBBY</button>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const EMPTY=0,RED=1,BLACK=2,RED_KING=3,BLACK_KING=4;
+const params = new URLSearchParams(location.search);
+const isAI = params.get('mode') === 'ai';
+let board = [], selectedCell = null, validMoves = [], isRedTurn = true;
+let playerSide = 'red', myUsername = '', roomId = null;
+let socket, gameActive = false, captureCount = 0, moveCount = 0;
+
+document.getElementById('modeLabel').textContent = isAI ? '🤖 VS AI' : '🌐 ONLINE';
+
+async function getUser() {
+  try {
+    const r = await fetch('/api/auth/me');
+    if (r.ok) { const d = await r.json(); myUsername = d.username; }
+  } catch {}
+}
+
+async function init() {
+  await getUser();
+  socket = io({ auth: {} });
+  socket.on('connect', () => {
+    if (isAI) {
+      socket.emit('startAIGame', { game: 'checkers' });
+    }
+  });
+  socket.on('checkersAIStart', ({ board: b, playerSide: side, isRedTurn: t }) => {
+    board = b; isRedTurn = t; playerSide = side; gameActive = true;
+    document.getElementById('redName').textContent = myUsername || 'You';
+    document.getElementById('blackName').textContent = 'AI';
+    renderBoard(); updateStatus(); updatePieceCounts();
+  });
+  socket.on('checkersStart', ({ board: b, players, isRedTurn: t }) => {
+    board = b; isRedTurn = t; gameActive = true;
+    document.getElementById('redName').textContent = players.red;
+    document.getElementById('blackName').textContent = players.black;
+    renderBoard(); updateStatus(); updatePieceCounts();
+  });
+  socket.on('yourSide', side => { playerSide = side; });
+  socket.on('checkersAIUpdate', handleUpdate);
+  socket.on('checkersUpdate', handleUpdate);
+  socket.on('moveError', msg => { showError(msg); });
+  socket.on('opponentLeft', () => { document.getElementById('statusText').textContent = 'Opponent left'; });
+}
+
+function handleUpdate(data) {
+  if (data.winner) {
+    board = data.board; renderBoard(); updatePieceCounts();
+    showWinner(data.winner);
+    return;
+  }
+  const wasSelected = selectedCell;
+  board = data.board;
+  isRedTurn = data.isRedTurn;
+  selectedCell = null;
+  validMoves = [];
+
+  if (data.chainCapture) {
+    selectedCell = data.chainCapture;
+    computeValidMoves(selectedCell[0], selectedCell[1]);
+  }
+  if (data.lastMove) {
+    const [tr, tc] = data.lastMove.to;
+    animatePiece(tr, tc);
+    if (data.lastMove.capture) {
+      captureCount++;
+      const capEntry = document.createElement('div');
+      capEntry.className = 'cap-item';
+      const capLog = document.getElementById('captureLog');
+      if (capLog.querySelector('p')) capLog.innerHTML = '';
+      capEntry.textContent = `Move ${moveCount}: Capture at (${data.lastMove.capture[0]},${data.lastMove.capture[1]})`;
+      capLog.insertBefore(capEntry, capLog.firstChild);
+    }
+    moveCount++;
+    const ml = document.getElementById('moveLog');
+    if (ml.querySelector('p')) ml.innerHTML = '';
+    const e = document.createElement('div');
+    e.className = 'cap-item';
+    e.textContent = `${moveCount}. (${data.lastMove.from[0]},${data.lastMove.from[1]}) → (${data.lastMove.to[0]},${data.lastMove.to[1]})`;
+    ml.insertBefore(e, ml.firstChild);
+  }
+
+  renderBoard(); updateStatus(); updatePieceCounts();
+}
+
+function computeValidMoves(r, c) {
+  validMoves = getClientMoves(board, r, c, isRedTurn);
+}
+
+function getClientMoves(board, row, col, isRedTurn) {
+  const piece = board[row][col];
+  if (!piece) return [];
+  const isRed = piece === RED || piece === RED_KING;
+  const isBlack = piece === BLACK || piece === BLACK_KING;
+  if (isRedTurn && !isRed) return [];
+  if (!isRedTurn && !isBlack) return [];
+
+  const dirs = [];
+  if (isRed || piece === RED_KING || piece === BLACK_KING) dirs.push([-1,-1],[-1,1]);
+  if (isBlack || piece === RED_KING || piece === BLACK_KING) dirs.push([1,-1],[1,1]);
+
+  const captures = [], moves = [];
+  for (const [dr,dc] of dirs) {
+    const nr=row+dr, nc=col+dc;
+    if (nr>=0&&nr<8&&nc>=0&&nc<8&&board[nr][nc]===EMPTY) moves.push([nr,nc]);
+    const cr=row+dr*2, cc=col+dc*2;
+    if (cr>=0&&cr<8&&cc>=0&&cc<8&&board[cr][cc]===EMPTY) {
+      const mid = board[nr][nc];
+      if ((isRed&&(mid===BLACK||mid===BLACK_KING))||(isBlack&&(mid===RED||mid===RED_KING))) captures.push([cr,cc]);
+    }
+  }
+  return captures.length > 0 ? captures : moves;
+}
+
+function hasAnyCapture(board, isRedTurn) {
+  for (let r=0;r<8;r++) for (let c=0;c<8;c++) {
+    const piece = board[r][c];
+    const isR = piece===RED||piece===RED_KING;
+    const isB = piece===BLACK||piece===BLACK_KING;
+    if (!piece) continue;
+    if (isRedTurn&&!isR) continue;
+    if (!isRedTurn&&!isB) continue;
+    const dirs = [];
+    if (isR||piece===RED_KING||piece===BLACK_KING) dirs.push([-1,-1],[-1,1]);
+    if (isB||piece===RED_KING||piece===BLACK_KING) dirs.push([1,-1],[1,1]);
+    for (const [dr,dc] of dirs) {
+      const nr=r+dr,nc=c+dc,cr=r+dr*2,cc=c+dc*2;
+      if (cr>=0&&cr<8&&cc>=0&&cc<8&&board[cr][cc]===EMPTY) {
+        const mid=board[nr]?.[nc];
+        if ((isR&&(mid===BLACK||mid===BLACK_KING))||(isB&&(mid===RED||mid===RED_KING))) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function animatePiece(r, c) {
+  setTimeout(() => {
+    const cells = document.querySelectorAll('.cell');
+    const cellEl = cells[r * 8 + c];
+    const piece = cellEl?.querySelector('.piece');
+    if (piece) { piece.classList.add('moving'); setTimeout(() => piece.classList.remove('moving'), 250); }
+  }, 50);
+}
+
+function renderBoard() {
+  const boardEl = document.getElementById('board');
+  boardEl.innerHTML = '';
+  const validSet = new Set(validMoves.map(([r,c]) => `${r},${c}`));
+
+  for (let r=0;r<8;r++) for (let c=0;c<8;c++) {
+    const cell = document.createElement('div');
+    cell.className = `cell ${(r+c)%2===0?'light':'dark'}`;
+    const key = `${r},${c}`;
+    if (selectedCell && selectedCell[0]===r && selectedCell[1]===c) cell.classList.add('selected');
+    if (validSet.has(key)) cell.classList.add('valid-move');
+
+    const piece = board[r][c];
+    if (piece) {
+      const p = document.createElement('div');
+      p.className = `piece ${(piece===RED||piece===RED_KING)?'red-piece':'black-piece'}`;
+      if (piece===RED_KING||piece===BLACK_KING) p.classList.add('king');
+      if (selectedCell && selectedCell[0]===r && selectedCell[1]===c) p.classList.add('selected-piece');
+      cell.appendChild(p);
+    }
+    cell.addEventListener('click', () => handleCellClick(r, c));
+    boardEl.appendChild(cell);
+  }
+}
+
+function handleCellClick(r, c) {
+  if (!gameActive) return;
+  const isMyTurn = (isRedTurn && playerSide === 'red') || (!isRedTurn && playerSide === 'black');
+  if (!isMyTurn && !isAI) return;
+  if (isAI && !isRedTurn) return;
+
+  const piece = board[r][c];
+
+  // If valid move target
+  if (selectedCell) {
+    const validSet = new Set(validMoves.map(([vr,vc]) => `${vr},${vc}`));
+    if (validSet.has(`${r},${c}`)) {
+      sendMove(selectedCell, [r,c]);
+      selectedCell = null; validMoves = [];
+      renderBoard(); return;
+    }
+  }
+
+  // Select piece
+  if (piece && ((isRedTurn && (piece===RED||piece===RED_KING)) || (!isRedTurn && (piece===BLACK||piece===BLACK_KING)))) {
+    selectedCell = [r, c];
+    validMoves = getClientMoves(board, r, c, isRedTurn);
+    // If there's a mandatory capture, filter non-capture moves
+    if (hasAnyCapture(board, isRedTurn)) {
+      const caps = validMoves.filter(([vr,vc]) => {
+        const dr=vr-r, dc=vc-c;
+        if (Math.abs(dr)===2) return true;
+        return false;
+      });
+      if (caps.length > 0) validMoves = caps;
+      else { selectedCell = null; validMoves = []; }
+    }
+  } else {
+    selectedCell = null; validMoves = [];
+  }
+  renderBoard();
+}
+
+function sendMove(from, to) {
+  const event = isAI ? 'checkersAIMove' : 'checkersMove';
+  const data = { move: { from, to } };
+  if (!isAI) data.roomId = roomId;
+  socket.emit(event, data);
+}
+
+function updateStatus() {
+  const isMyTurn = (isRedTurn && playerSide === 'red') || (!isRedTurn && playerSide === 'black');
+  const color = isRedTurn ? '#e63946' : '#c8d8e8';
+  document.getElementById('turnIndicator').style.background = color;
+  const turnName = isRedTurn ? document.getElementById('redName').textContent : document.getElementById('blackName').textContent;
+  document.getElementById('statusText').textContent = isMyTurn ? "YOUR TURN" : `${turnName}'S TURN`;
+  document.getElementById('playerRed').classList.toggle('active-player', isRedTurn);
+  document.getElementById('playerBlack').classList.toggle('active-player', !isRedTurn);
+}
+
+function updatePieceCounts() {
+  let r=0, b=0;
+  for (const row of board) for (const p of row) { if(p===RED||p===RED_KING) r++; if(p===BLACK||p===BLACK_KING) b++; }
+  document.getElementById('redCount').textContent = `${r} piece${r!==1?'s':''}`;
+  document.getElementById('blackCount').textContent = `${b} piece${b!==1?'s':''}`;
+}
+
+function showWinner(winner) {
+  gameActive = false;
+  const isWin = winner === myUsername || winner === 'You' || (isAI && winner === 'You');
+  document.getElementById('winnerTrophy').textContent = isWin ? '🏆' : '😔';
+  document.getElementById('winnerTitle').textContent = isWin ? 'VICTORY!' : 'DEFEAT';
+  document.getElementById('winnerSub').textContent = `${winner} wins the match!`;
+  document.getElementById('winnerOverlay').style.display = 'flex';
+  // Record result
+  if (isAI) {
+    fetch('/api/games/record', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ game:'checkers', opponent:'AI', winner: isWin ? myUsername : 'AI', isRanked: false })
+    });
+  }
+}
+
+function showError(msg) {
+  const st = document.getElementById('statusText');
+  const old = st.textContent;
+  st.textContent = '⚠ ' + msg;
+  st.style.color = '#ff3355';
+  setTimeout(() => { st.textContent = old; st.style.color = ''; }, 2000);
+}
+
+function newGame() {
+  document.getElementById('winnerOverlay').style.display = 'none';
+  selectedCell = null; validMoves = []; captureCount = 0; moveCount = 0;
+  document.getElementById('captureLog').innerHTML = '<p style="color:var(--text-dim);font-size:0.85rem">No captures yet</p>';
+  document.getElementById('moveLog').innerHTML = '<p style="color:var(--text-dim);font-size:0.85rem">Game started</p>';
+  if (isAI) socket.emit('startAIGame', { game: 'checkers' });
+}
+
+// Get room from session storage
+roomId = sessionStorage.getItem('currentRoom');
+init();
+</script>
+</body>
+</html>
