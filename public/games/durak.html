@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Durak — GameHub</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#080c14; --surface:#0d1520; --surface2:#111d2e; --border:#1a2d47;
+  --accent:#00d4ff; --gold:#ffd700; --text:#c8d8e8; --text-dim:#5a7a9a;
+  --green:#00ff88; --red:#ff3355; --card-bg:#f5f0e8; --card-border:#d4c4a0;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font-family:'Rajdhani',sans-serif; min-height:100vh; overflow-x:hidden; }
+
+.game-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:12px 24px; background:var(--surface); border-bottom:1px solid var(--border);
+}
+.back-btn {
+  padding:8px 16px; border:1px solid var(--border); border-radius:6px;
+  background:transparent; color:var(--text); cursor:pointer;
+  font-family:'Rajdhani',sans-serif; font-size:0.9rem; text-decoration:none;
+}
+.back-btn:hover { border-color:var(--accent); }
+.game-title { font-family:'Orbitron',sans-serif; font-size:1.1rem; color:var(--accent); }
+
+/* MAIN TABLE */
+.durak-table {
+  max-width:900px; margin:0 auto; padding:20px;
+  display:flex; flex-direction:column; gap:20px;
+}
+
+/* OPPONENT HAND */
+.opponent-area { text-align:center; }
+.opponent-label { font-size:0.85rem; color:var(--text-dim); margin-bottom:8px; letter-spacing:1px; }
+.card-backs { display:flex; justify-content:center; gap:-8px; }
+.card-back {
+  width:44px; height:64px; border-radius:6px;
+  background: linear-gradient(135deg, #1a3a6a, #0d2045);
+  border:2px solid rgba(0,100,200,0.3);
+  margin-right:-8px; box-shadow:2px 2px 4px rgba(0,0,0,0.4);
+  animation:dealIn 0.3s ease backwards;
+}
+@keyframes dealIn { from{transform:translateY(-20px);opacity:0} to{transform:translateY(0);opacity:1} }
+
+/* TABLE AREA */
+.play-area {
+  background:rgba(0,40,20,0.2); border:1px solid rgba(0,100,50,0.3);
+  border-radius:16px; padding:20px; min-height:140px;
+  display:flex; gap:16px; flex-wrap:wrap; align-items:center; justify-content:center;
+  position:relative;
+}
+.play-area-label {
+  position:absolute; top:8px; left:12px;
+  font-size:0.7rem; color:rgba(0,200,100,0.5); letter-spacing:2px;
+}
+.attack-pair {
+  display:flex; flex-direction:column; align-items:center; gap:-8px;
+  position:relative;
+}
+.attack-pair .def-card { margin-top:-30px; transform:rotate(5deg); }
+
+/* TRUMP INDICATOR */
+.trump-area {
+  display:flex; align-items:center; gap:20px; justify-content:center;
+  padding:10px; background:var(--surface2); border-radius:10px;
+  border:1px solid var(--border);
+}
+.trump-card-display {
+  width:44px; height:64px; border-radius:6px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:1.1rem; font-weight:700;
+  background:var(--card-bg); color:#000;
+  border:2px solid var(--card-border);
+  box-shadow:2px 2px 8px rgba(0,0,0,0.3);
+}
+.trump-info { color:var(--text-dim); font-size:0.9rem; }
+.trump-info span { color:var(--gold); font-family:'Orbitron',sans-serif; }
+.deck-count { font-family:'Orbitron',sans-serif; font-size:1.2rem; color:var(--accent); }
+
+/* CARDS */
+.card {
+  width:60px; height:88px; border-radius:8px;
+  background:var(--card-bg); border:2px solid var(--card-border);
+  display:flex; flex-direction:column; align-items:center; justify-content:space-between;
+  padding:4px 6px; cursor:pointer;
+  box-shadow:2px 4px 8px rgba(0,0,0,0.3);
+  transition:transform 0.15s, box-shadow 0.15s;
+  position:relative; user-select:none;
+  animation:dealIn 0.3s ease backwards;
+}
+.card:hover { transform:translateY(-12px); box-shadow:2px 12px 20px rgba(0,0,0,0.4); }
+.card.selected { transform:translateY(-18px); box-shadow:0 0 0 3px var(--accent), 2px 12px 20px rgba(0,0,0,0.4); }
+.card.played { cursor:default; transform:none !important; }
+.card.played:hover { transform:none; }
+.card-rank { font-size:1rem; font-weight:700; line-height:1; }
+.card-suit { font-size:1.2rem; line-height:1; }
+.card-center { font-size:1.6rem; }
+.card.hearts .card-rank, .card.hearts .card-suit, .card.hearts .card-center,
+.card.diamonds .card-rank, .card.diamonds .card-suit, .card.diamonds .card-center { color:#cc0000; }
+.card.spades .card-rank, .card.spades .card-suit, .card.spades .card-center,
+.card.clubs .card-rank, .card.clubs .card-suit, .card.clubs .card-center { color:#1a1a1a; }
+.card.trump-card { border-color:gold; box-shadow:0 0 8px rgba(255,215,0,0.4), 2px 4px 8px rgba(0,0,0,0.3); }
+
+/* PLAYER HAND */
+.player-area { text-align:center; }
+.player-label { font-size:0.85rem; color:var(--text-dim); margin-bottom:8px; letter-spacing:1px; }
+.hand { display:flex; justify-content:center; flex-wrap:wrap; gap:4px; padding:8px; }
+
+/* STATUS */
+.status-area {
+  text-align:center; padding:12px 20px;
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+}
+#statusText { font-family:'Orbitron',sans-serif; font-size:0.9rem; color:var(--accent); }
+.action-hint { color:var(--text-dim); font-size:0.85rem; margin-top:4px; }
+
+/* ACTION BUTTONS */
+.action-btns { display:flex; gap:12px; justify-content:center; }
+.action-btn {
+  padding:12px 24px; border-radius:8px; border:1px solid var(--border);
+  background:var(--surface); color:var(--text); cursor:pointer;
+  font-family:'Rajdhani',sans-serif; font-size:1rem; font-weight:600;
+  transition:all 0.2s;
+}
+.action-btn:hover { border-color:var(--accent); color:var(--accent); }
+.action-btn.primary { background:linear-gradient(135deg,var(--accent),#0088cc); border:none; color:#000; font-family:'Orbitron',sans-serif; font-size:0.85rem; }
+.action-btn.danger { border-color:rgba(255,51,85,0.4); color:var(--red); }
+.action-btn.danger:hover { background:rgba(255,51,85,0.1); }
+.action-btn:disabled { opacity:0.4; cursor:not-allowed; }
+
+/* WINNER */
+.winner-overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,0.85);
+  display:none; align-items:center; justify-content:center; z-index:100;
+}
+.winner-box {
+  background:var(--surface); border:1px solid var(--border); border-radius:16px;
+  padding:48px; text-align:center; max-width:400px;
+  animation:popIn 0.4s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes popIn { from{transform:scale(0.5);opacity:0} to{transform:scale(1);opacity:1} }
+.winner-trophy { font-size:4rem; margin-bottom:16px; }
+.winner-title { font-family:'Orbitron',sans-serif; font-size:1.5rem; color:var(--gold); margin-bottom:8px; }
+.winner-sub { color:var(--text-dim); margin-bottom:24px; }
+.winner-btns { display:flex; gap:12px; justify-content:center; }
+.btn-replay { padding:12px 28px; border:none; border-radius:8px; background:linear-gradient(135deg,var(--accent),#0088cc); color:#000; font-family:'Orbitron',sans-serif; font-size:0.85rem; font-weight:700; cursor:pointer; }
+.btn-home { padding:12px 20px; border:1px solid var(--border); border-radius:8px; background:transparent; color:var(--text); cursor:pointer; font-family:'Rajdhani',sans-serif; }
+</style>
+</head>
+<body>
+<div class="game-header">
+  <a href="/" class="back-btn">← LOBBY</a>
+  <span class="game-title">🃏 DURAK</span>
+  <span id="modeLabel" style="color:var(--text-dim);font-size:0.9rem"></span>
+</div>
+
+<div class="durak-table">
+  <!-- OPPONENT -->
+  <div class="opponent-area">
+    <div class="opponent-label" id="opponentLabel">OPPONENT</div>
+    <div class="card-backs" id="opponentHand"></div>
+  </div>
+
+  <!-- TRUMP + DECK INFO -->
+  <div class="trump-area">
+    <div>
+      <div class="trump-info">Trump suit: <span id="trumpSuit">?</span></div>
+      <div class="trump-info">Deck: <span class="deck-count" id="deckCount">36</span></div>
+    </div>
+    <div class="trump-card-display" id="trumpCardDisplay">?</div>
+    <div class="trump-info" id="roleInfo">—</div>
+  </div>
+
+  <!-- STATUS -->
+  <div class="status-area">
+    <div id="statusText">Starting game...</div>
+    <div class="action-hint" id="actionHint">Select a card to play</div>
+  </div>
+
+  <!-- PLAY AREA -->
+  <div class="play-area">
+    <div class="play-area-label">TABLE</div>
+    <div id="tableArea" style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;justify-content:center;width:100%"></div>
+  </div>
+
+  <!-- ACTION BUTTONS -->
+  <div class="action-btns">
+    <button class="action-btn danger" id="btnTake" onclick="doTake()" disabled>TAKE CARDS</button>
+    <button class="action-btn primary" id="btnEndTurn" onclick="doEndTurn()" disabled>END TURN ✓</button>
+  </div>
+
+  <!-- PLAYER HAND -->
+  <div class="player-area">
+    <div class="player-label" id="playerLabel">YOUR HAND</div>
+    <div class="hand" id="playerHand"></div>
+  </div>
+</div>
+
+<!-- WINNER -->
+<div class="winner-overlay" id="winnerOverlay">
+  <div class="winner-box">
+    <div class="winner-trophy" id="winnerTrophy">🏆</div>
+    <div class="winner-title" id="winnerTitle">VICTORY!</div>
+    <div class="winner-sub" id="winnerSub">You finished without cards!</div>
+    <div class="winner-btns">
+      <button class="btn-replay" onclick="newGame()">PLAY AGAIN</button>
+      <button class="btn-home" onclick="window.location.href='/'">LOBBY</button>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const isAI = params.get('mode') === 'ai';
+document.getElementById('modeLabel').textContent = isAI ? '🤖 VS AI' : '🌐 ONLINE';
+
+let gameState = null, socket = null, myUsername = '', myIdx = 0;
+let selectedCard = null, selectedAttackCard = null;
+
+const SUIT_CLASS = { '♠':'spades','♥':'hearts','♦':'diamonds','♣':'clubs' };
+
+async function getUser() {
+  try { const r = await fetch('/api/auth/me'); if(r.ok){ const d=await r.json(); myUsername=d.username; } } catch {}
+}
+
+async function init() {
+  await getUser();
+  socket = io({ auth: {} });
+  socket.on('connect', () => {
+    if (isAI) socket.emit('startAIGame', { game: 'durak' });
+  });
+  socket.on('durakAIStart', handleState);
+  socket.on('durakStart', handleState);
+  socket.on('durakAIUpdate', handleState);
+  socket.on('durakUpdate', handleState);
+  socket.on('yourSide', idx => { myIdx = idx; });
+  socket.on('moveError', msg => showError(msg));
+  socket.on('opponentLeft', () => { document.getElementById('statusText').textContent = 'Opponent left'; });
+}
+
+function handleState(state) {
+  gameState = state;
+  if (state.myIndex !== undefined) myIdx = state.myIndex;
+  render();
+  if (state.phase === 'done') showEndGame(state);
+}
+
+function render() {
+  if (!gameState) return;
+  const s = gameState;
+
+  // Trump
+  const tc = s.trumpCard;
+  if (tc) {
+    document.getElementById('trumpSuit').textContent = tc.suit;
+    document.getElementById('trumpCardDisplay').textContent = tc.rank + tc.suit;
+    document.getElementById('trumpCardDisplay').style.color = (tc.suit==='♥'||tc.suit==='♦')?'#cc0000':'#1a1a1a';
+  }
+  document.getElementById('deckCount').textContent = s.deckCount;
+
+  // Role
+  const amAttacker = s.attacker === myIdx;
+  const amDefender = s.defender === myIdx;
+  document.getElementById('roleInfo').textContent = amAttacker ? '⚔️ You are Attacker' : amDefender ? '🛡️ You are Defender' : '—';
+  document.getElementById('roleInfo').style.color = amAttacker ? '#ff9944' : '#44bbff';
+
+  // Opponent hand
+  const oh = document.getElementById('opponentHand');
+  oh.innerHTML = '';
+  for (let i=0; i<s.opponentHandCount; i++) {
+    const cb = document.createElement('div');
+    cb.className = 'card-back';
+    cb.style.animationDelay = (i*0.05)+'s';
+    oh.appendChild(cb);
+  }
+
+  // Table
+  renderTable(s.table);
+
+  // Player hand
+  renderHand(s.myHand);
+
+  // Status
+  updateStatus(s);
+
+  // Buttons
+  const canTake = amDefender && s.phase === 'defense' && s.table.some(p=>!p.defense);
+  const canEnd = amAttacker && s.phase === 'attack' && s.table.length > 0 && s.table.every(p=>p.defense);
+  document.getElementById('btnTake').disabled = !canTake;
+  document.getElementById('btnEndTurn').disabled = !canEnd;
+}
+
+function renderTable(table) {
+  const ta = document.getElementById('tableArea');
+  ta.innerHTML = '';
+  if (!table || table.length === 0) {
+    ta.innerHTML = '<span style="color:rgba(255,255,255,0.2);font-size:0.9rem">Waiting for attack...</span>';
+    return;
+  }
+  for (const pair of table) {
+    const pairDiv = document.createElement('div');
+    pairDiv.className = 'attack-pair';
+    pairDiv.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;';
+    const ac = createCardEl(pair.attack, true);
+    ac.classList.add('played');
+    pairDiv.appendChild(ac);
+    if (pair.defense) {
+      const dc = createCardEl(pair.defense, true);
+      dc.classList.add('played', 'def-card');
+      pairDiv.appendChild(dc);
+    } else {
+      // Clickable attack card for defender
+      if (gameState && gameState.defender === myIdx && gameState.phase === 'defense') {
+        ac.style.cursor = 'pointer';
+        ac.addEventListener('click', () => selectAttackCard(pair.attack));
+        if (selectedAttackCard && cardKey(pair.attack) === cardKey(selectedAttackCard)) {
+          ac.style.outline = '3px solid var(--accent)';
+        }
+      }
+    }
+    ta.appendChild(pairDiv);
+  }
+}
+
+function renderHand(hand) {
+  const ph = document.getElementById('playerHand');
+  ph.innerHTML = '';
+  if (!hand) return;
+  hand.forEach((card, i) => {
+    const el = createCardEl(card, false);
+    el.style.animationDelay = (i * 0.05) + 's';
+    if (selectedCard && cardKey(card) === cardKey(selectedCard)) el.classList.add('selected');
+    if (gameState?.trump && card.suit === gameState.trump) el.classList.add('trump-card');
+    el.addEventListener('click', () => handleCardClick(card));
+    ph.appendChild(el);
+  });
+}
+
+function createCardEl(card, small) {
+  const el = document.createElement('div');
+  el.className = `card ${SUIT_CLASS[card.suit] || 'spades'}`;
+  if (small) { el.style.width='52px'; el.style.height='76px'; }
+  el.innerHTML = `
+    <div class="card-rank">${card.rank}</div>
+    <div class="card-center">${card.suit}</div>
+    <div class="card-rank" style="transform:rotate(180deg)">${card.rank}</div>
+  `;
+  return el;
+}
+
+function cardKey(c) { return c.rank + c.suit; }
+
+function handleCardClick(card) {
+  if (!gameState) return;
+  const { attacker, defender, phase, isMyTurn } = gameState;
+  const amAttacker = attacker === myIdx;
+  const amDefender = defender === myIdx;
+
+  if (amAttacker && phase === 'attack') {
+    selectedCard = card;
+    selectedAttackCard = null;
+    doAttack();
+    return;
+  }
+  if (amDefender && phase === 'defense') {
+    if (selectedAttackCard) {
+      doDefend(selectedAttackCard, card);
+      selectedAttackCard = null;
+      selectedCard = null;
+    } else {
+      selectedCard = card;
+      renderHand(gameState.myHand);
+    }
+  }
+  if (amAttacker && phase === 'attack' && gameState.table.length > 0) {
+    // Add more attack
+    selectedCard = card;
+    doAttack();
+  }
+}
+
+function selectAttackCard(card) {
+  selectedAttackCard = card;
+  renderTable(gameState.table);
+  document.getElementById('actionHint').textContent = 'Now select a card from your hand to defend with';
+}
+
+function doAttack() {
+  if (!selectedCard) return;
+  const evt = isAI ? 'durakAIAction' : 'durakAction';
+  socket.emit(evt, { action:'attack', card:selectedCard, roomId: sessionStorage.getItem('currentRoom') });
+  selectedCard = null;
+}
+
+function doDefend(attackCard, defendCard) {
+  const evt = isAI ? 'durakAIAction' : 'durakAction';
+  socket.emit(evt, { action:'defend', attackCard, defendCard, roomId: sessionStorage.getItem('currentRoom') });
+  selectedCard = null; selectedAttackCard = null;
+}
+
+function doTake() {
+  const evt = isAI ? 'durakAIAction' : 'durakAction';
+  socket.emit(evt, { action:'take', roomId: sessionStorage.getItem('currentRoom') });
+}
+
+function doEndTurn() {
+  const evt = isAI ? 'durakAIAction' : 'durakAction';
+  socket.emit(evt, { action:'endTurn', roomId: sessionStorage.getItem('currentRoom') });
+}
+
+function updateStatus(s) {
+  const amAttacker = s.attacker === myIdx;
+  const amDefender = s.defender === myIdx;
+  let status = '', hint = '';
+
+  if (s.phase === 'attack') {
+    if (amAttacker) { status = 'YOUR TURN — ATTACK'; hint = 'Click a card to attack'; }
+    else { status = "OPPONENT'S TURN — ATTACKING"; hint = 'Waiting for opponent to attack...'; }
+  } else if (s.phase === 'defense') {
+    const undefended = s.table.filter(p=>!p.defense).length;
+    if (amDefender) {
+      status = `DEFEND! (${undefended} card${undefended!==1?'s':''} to beat)`;
+      hint = selectedAttackCard ? 'Select a card from hand to defend' : 'Click an attack card on the table, then a card from your hand';
+    } else {
+      status = 'OPPONENT IS DEFENDING'; hint = 'Waiting...';
+    }
+  }
+  document.getElementById('statusText').textContent = status || s.message || '—';
+  document.getElementById('actionHint').textContent = hint;
+}
+
+function showEndGame(state) {
+  const won = (state.winner === 'player1' && myIdx === 0) || (state.winner === 'player2' && myIdx === 1);
+  const isDraw = state.winner === 'draw';
+  document.getElementById('winnerTrophy').textContent = isDraw ? '🤝' : won ? '🏆' : '😔';
+  document.getElementById('winnerTitle').textContent = isDraw ? 'DRAW!' : won ? 'VICTORY!' : 'DEFEAT — DURAK!';
+  document.getElementById('winnerSub').textContent = isDraw ? 'Both players finished together!' : won ? 'You played all your cards!' : 'You are the Durak (Fool)!';
+  document.getElementById('winnerOverlay').style.display = 'flex';
+  if (isAI) {
+    fetch('/api/games/record', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ game:'durak', opponent:'AI', winner: won ? myUsername : 'AI', isRanked:false })
+    });
+  }
+}
+
+function showError(msg) {
+  const st = document.getElementById('statusText');
+  const old = st.textContent;
+  st.textContent = '⚠ ' + msg;
+  st.style.color = '#ff3355';
+  setTimeout(() => { st.textContent = old; st.style.color = ''; }, 2000);
+}
+
+function newGame() {
+  document.getElementById('winnerOverlay').style.display = 'none';
+  selectedCard = null; selectedAttackCard = null;
+  if (isAI) socket.emit('startAIGame', { game: 'durak' });
+}
+
+init();
+</script>
+</body>
+</html>
