@@ -74,7 +74,15 @@ async function checkAuth() {
 
 // ===== SOCKET =====
 function initSocket() {
-  socket = io({ auth: {} });
+  // Socket.io can't read httpOnly cookies from JS, so we pass username as auth
+  // The server will look up the user by username from the active session
+  socket = io({ auth: { username: currentUser.username } });
+  socket.on('connect', () => {
+    console.log('[Socket] Connected:', socket.id);
+  });
+  socket.on('connect_error', err => {
+    console.error('[Socket] Connect error:', err.message);
+  });
   socket.on('onlineCount', n => { document.getElementById('onlineCount').textContent = n; });
   socket.on('roomCreated', ({ roomId }) => {
     pendingRoomId = roomId;
@@ -97,9 +105,9 @@ async function loadLeaderboard() {
         <div class="lb-rank ${i===0?'gold':i===1?'silver':i===2?'bronze':''}">${i+1}</div>
         <div class="lb-info">
           <div class="lb-name">${u.username}</div>
-          <div class="lb-stats">${u.wins || 0} wins Â· ${u.total_games || 0} games</div>
+          <div class="lb-stats">${u.wins || 0} wins · ${u.total_games || 0} games</div>
         </div>
-        <div class="lb-coins">ðª ${u.coins?.toLocaleString()}</div>
+        <div class="lb-coins">🪙 ${u.coins?.toLocaleString()}</div>
       </div>
     `).join('');
   } catch {}
@@ -118,7 +126,7 @@ async function claimDaily() {
     }
     currentUser.coins = data.newBalance;
     document.getElementById('coinBalance').textContent = data.newBalance?.toLocaleString();
-    showToast('Daily Reward!', `+${data.amount} coins claimed! ð`, 'success');
+    showToast('Daily Reward!', `+${data.amount} coins claimed! 🎉`, 'success');
   } catch { btn.disabled = false; }
 }
 
@@ -142,7 +150,7 @@ function openGameModal(game) {
   gameMode = 'ai';
   onlineMode = 'quick';
   pendingRoomId = null;
-  document.getElementById('modalTitle').textContent = game.toUpperCase() + ' â SELECT MODE';
+  document.getElementById('modalTitle').textContent = game.toUpperCase() + ' — SELECT MODE';
   document.getElementById('optVsAI').classList.add('selected');
   document.getElementById('optOnline').classList.remove('selected');
   document.getElementById('onlineOptions').style.display = 'none';
@@ -181,29 +189,48 @@ function selectOnlineMode(mode) {
 function launchGame() {
   if (gameMode === 'ai') {
     closeModal();
+    sessionStorage.setItem('gameUsername', currentUser.username);
     window.location.href = `/game/${selectedGame}?mode=ai`;
     return;
   }
-  // Online
+  // Online — store username for the game page to use
+  sessionStorage.setItem('gameUsername', currentUser.username);
+
   if (onlineMode === 'quick') {
     socket.emit('quickMatch', { game: selectedGame });
-    socket.once('checkersStart', () => { closeModal(); window.location.href = `/game/${selectedGame}?mode=online`; });
-    socket.once('durakStart', () => { closeModal(); window.location.href = `/game/${selectedGame}?mode=online`; });
     showToast('Matchmaking', 'Finding opponent...');
+    const gameStartEvent = selectedGame === 'checkers' ? 'checkersStart' : 'durakStart';
+    socket.once(gameStartEvent, (data) => {
+      sessionStorage.setItem('currentRoom', data.roomId || '');
+      sessionStorage.setItem('playerSide', data.mySide || '');
+      window.location.href = `/game/${selectedGame}?mode=online`;
+    });
     return;
   }
   if (onlineMode === 'create') {
     socket.emit('createRoom', { game: selectedGame });
-    socket.once('checkersStart', () => { closeModal(); window.location.href = `/game/${selectedGame}?mode=online`; });
-    socket.once('durakStart', () => { closeModal(); window.location.href = `/game/${selectedGame}?mode=online`; });
+    // roomCreated event shows the code — wait for opponent to join then game starts
+    const gameStartEvent = selectedGame === 'checkers' ? 'checkersStart' : 'durakStart';
+    socket.once(gameStartEvent, (data) => {
+      sessionStorage.setItem('currentRoom', pendingRoomId || '');
+      sessionStorage.setItem('playerSide', data.mySide || '');
+      window.location.href = `/game/${selectedGame}?mode=online`;
+    });
     return;
   }
   if (onlineMode === 'join') {
     const code = document.getElementById('joinRoomInput').value.trim().toUpperCase();
     if (!code) { showToast('Error', 'Enter a room code', 'error'); return; }
     socket.emit('joinRoom', { roomId: code });
-    socket.once('checkersStart', () => { closeModal(); window.location.href = `/game/${selectedGame}?mode=online`; });
-    socket.once('durakStart', () => { closeModal(); window.location.href = `/game/${selectedGame}?mode=online`; });
+    const gameStartEvent = selectedGame === 'checkers' ? 'checkersStart' : 'durakStart';
+    socket.once(gameStartEvent, (data) => {
+      sessionStorage.setItem('currentRoom', code);
+      sessionStorage.setItem('playerSide', data.mySide || '');
+      window.location.href = `/game/${selectedGame}?mode=online`;
+    });
+    socket.once('error', (msg) => {
+      showToast('Error', msg, 'error');
+    });
     return;
   }
 }
