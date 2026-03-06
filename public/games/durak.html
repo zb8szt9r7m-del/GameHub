@@ -218,7 +218,7 @@ const params = new URLSearchParams(location.search);
 const isAI = params.get('mode') === 'ai';
 document.getElementById('modeLabel').textContent = isAI ? '🤖 VS AI' : '🌐 ONLINE';
 
-let gameState = null, socket = null, myUsername = '', myIdx = 0;
+let gameState = null, socket = null, myUsername = '', myIdx = 0, roomId = null;
 let selectedCard = null, selectedAttackCard = null;
 
 const SUIT_CLASS = { '♠':'spades','♥':'hearts','♦':'diamonds','♣':'clubs' };
@@ -229,17 +229,51 @@ async function getUser() {
 
 async function init() {
   await getUser();
-  socket = io({ auth: {} });
+  // Pull stored session data
+  const storedUsername = sessionStorage.getItem('gameUsername');
+  if (storedUsername) myUsername = storedUsername;
+  const storedRoom = sessionStorage.getItem('currentRoom');
+  if (storedRoom) roomId = storedRoom;
+  const storedSide = sessionStorage.getItem('playerSide');
+  if (storedSide !== null && storedSide !== '') myIdx = parseInt(storedSide) || 0;
+
+  socket = io({ auth: { username: myUsername } });
+
   socket.on('connect', () => {
-    if (isAI) socket.emit('startAIGame', { game: 'durak' });
+    console.log('[Durak] Socket connected:', socket.id);
+    if (isAI) {
+      socket.emit('startAIGame', { game: 'durak' });
+    } else if (storedRoom) {
+      socket.emit('rejoinRoom', { roomId: storedRoom, username: myUsername });
+    }
   });
-  socket.on('durakAIStart', handleState);
-  socket.on('durakStart', handleState);
+
+  socket.on('durakAIStart', (state) => {
+    myIdx = state.myIndex !== undefined ? state.myIndex : 0;
+    handleState(state);
+  });
+
+  socket.on('durakStart', (state) => {
+    if (state.roomId) { roomId = state.roomId; sessionStorage.setItem('currentRoom', state.roomId); }
+    if (state.mySide !== undefined) { myIdx = state.mySide; sessionStorage.setItem('playerSide', myIdx); }
+    handleState(state);
+  });
+
+  socket.on('durakRejoin', (state) => {
+    if (state.myIndex !== undefined) myIdx = state.myIndex;
+    handleState(state);
+  });
+
   socket.on('durakAIUpdate', handleState);
   socket.on('durakUpdate', handleState);
-  socket.on('yourSide', idx => { myIdx = idx; });
   socket.on('moveError', msg => showError(msg));
-  socket.on('opponentLeft', () => { document.getElementById('statusText').textContent = 'Opponent left'; });
+  socket.on('opponentLeft', () => {
+    gameActive = false;
+    document.getElementById('statusText').textContent = 'Opponent disconnected';
+  });
+  socket.on('connect_error', (err) => {
+    console.error('[Durak] Connect error:', err.message);
+  });
 }
 
 function handleState(state) {
@@ -392,24 +426,24 @@ function selectAttackCard(card) {
 function doAttack() {
   if (!selectedCard) return;
   const evt = isAI ? 'durakAIAction' : 'durakAction';
-  socket.emit(evt, { action:'attack', card:selectedCard, roomId: sessionStorage.getItem('currentRoom') });
+  socket.emit(evt, { action:'attack', card:selectedCard, roomId });
   selectedCard = null;
 }
 
 function doDefend(attackCard, defendCard) {
   const evt = isAI ? 'durakAIAction' : 'durakAction';
-  socket.emit(evt, { action:'defend', attackCard, defendCard, roomId: sessionStorage.getItem('currentRoom') });
+  socket.emit(evt, { action:'defend', attackCard, defendCard, roomId });
   selectedCard = null; selectedAttackCard = null;
 }
 
 function doTake() {
   const evt = isAI ? 'durakAIAction' : 'durakAction';
-  socket.emit(evt, { action:'take', roomId: sessionStorage.getItem('currentRoom') });
+  socket.emit(evt, { action:'take', roomId });
 }
 
 function doEndTurn() {
   const evt = isAI ? 'durakAIAction' : 'durakAction';
-  socket.emit(evt, { action:'endTurn', roomId: sessionStorage.getItem('currentRoom') });
+  socket.emit(evt, { action:'endTurn', roomId });
 }
 
 function updateStatus(s) {
