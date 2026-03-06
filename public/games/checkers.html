@@ -249,29 +249,56 @@ async function getUser() {
 
 async function init() {
   await getUser();
-  socket = io({ auth: {} });
+  // Connect with username in auth so server can identify us without httpOnly cookie
+  socket = io({ auth: { username: myUsername } });
+
   socket.on('connect', () => {
+    console.log('[Checkers] Socket connected:', socket.id);
     if (isAI) {
       socket.emit('startAIGame', { game: 'checkers' });
+    } else if (roomId) {
+      // Rejoin the room after page navigation
+      socket.emit('rejoinRoom', { roomId, username: myUsername });
     }
   });
+
   socket.on('checkersAIStart', ({ board: b, playerSide: side, isRedTurn: t }) => {
     board = b; isRedTurn = t; playerSide = side; gameActive = true;
     document.getElementById('redName').textContent = myUsername || 'You';
     document.getElementById('blackName').textContent = 'AI';
     renderBoard(); updateStatus(); updatePieceCounts();
   });
-  socket.on('checkersStart', ({ board: b, players, isRedTurn: t }) => {
-    board = b; isRedTurn = t; gameActive = true;
-    document.getElementById('redName').textContent = players.red;
-    document.getElementById('blackName').textContent = players.black;
+
+  socket.on('checkersStart', (data) => {
+    board = data.board; isRedTurn = data.isRedTurn; gameActive = true;
+    playerSide = data.mySide || sessionStorage.getItem('playerSide') || 'red';
+    if (data.roomId) { roomId = data.roomId; sessionStorage.setItem('currentRoom', roomId); }
+    document.getElementById('redName').textContent = data.players.red;
+    document.getElementById('blackName').textContent = data.players.black;
     renderBoard(); updateStatus(); updatePieceCounts();
   });
-  socket.on('yourSide', side => { playerSide = side; });
+
+  socket.on('checkersRejoin', (data) => {
+    // Server sends current state after rejoin
+    board = data.board; isRedTurn = data.isRedTurn; gameActive = true;
+    playerSide = data.mySide;
+    document.getElementById('redName').textContent = data.players.red;
+    document.getElementById('blackName').textContent = data.players.black;
+    document.getElementById('statusText').textContent = 'RECONNECTED';
+    renderBoard(); updateStatus(); updatePieceCounts();
+  });
+
   socket.on('checkersAIUpdate', handleUpdate);
   socket.on('checkersUpdate', handleUpdate);
   socket.on('moveError', msg => { showError(msg); });
-  socket.on('opponentLeft', () => { document.getElementById('statusText').textContent = 'Opponent left'; });
+  socket.on('opponentLeft', () => {
+    gameActive = false;
+    document.getElementById('statusText').textContent = 'Opponent disconnected';
+  });
+  socket.on('connect_error', (err) => {
+    console.error('[Checkers] Connect error:', err.message);
+    document.getElementById('statusText').textContent = 'Connection error - try refreshing';
+  });
 }
 
 function handleUpdate(data) {
@@ -496,6 +523,7 @@ function newGame() {
 
 // Get room from session storage
 roomId = sessionStorage.getItem('currentRoom');
+myUsername = sessionStorage.getItem('gameUsername') || myUsername;
 init();
 </script>
 </body>
